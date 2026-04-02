@@ -3,6 +3,7 @@ package com.playmusicfree.app.data.repository
 import android.content.Context
 import com.playmusicfree.app.data.local.MediaScanner
 import com.playmusicfree.app.data.local.PlaylistDao
+import com.playmusicfree.app.data.local.ScanPreferences
 import com.playmusicfree.app.data.model.Playlist
 import com.playmusicfree.app.data.model.Song
 import kotlinx.coroutines.Dispatchers
@@ -11,11 +12,20 @@ import kotlinx.coroutines.withContext
 
 class MusicRepository(
     private val context: Context,
-    private val playlistDao: PlaylistDao
+    private val playlistDao: PlaylistDao,
+    val scanPreferences: ScanPreferences
 ) {
 
     suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
-        MediaScanner.scanSongs(context)
+        MediaScanner.scanSongs(
+            context = context,
+            minDurationSeconds = scanPreferences.minDurationSeconds,
+            excludedFolders = scanPreferences.excludedFolders
+        )
+    }
+
+    suspend fun getAvailableFolders(): List<String> = withContext(Dispatchers.IO) {
+        MediaScanner.getAvailableFolders(context)
     }
 
     fun getPlaylists(): Flow<List<Playlist>> = playlistDao.getAll()
