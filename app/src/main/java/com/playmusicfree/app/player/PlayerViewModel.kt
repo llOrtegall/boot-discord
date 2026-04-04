@@ -1,6 +1,9 @@
 package com.playmusicfree.app.player
 
+import android.Manifest
 import android.app.Application
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -11,7 +14,7 @@ import com.playmusicfree.app.PlayMusicFreeApp
 import com.playmusicfree.app.data.model.Playlist
 import com.playmusicfree.app.data.model.Song
 import com.playmusicfree.app.data.repository.MusicRepository
-import com.playmusicfree.app.data.local.ScanPreferences
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -65,24 +68,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val excludedFolders: StateFlow<Set<String>> = _excludedFolders.asStateFlow()
 
     private var mediaController: MediaController? = null
+    private var playerListener: Player.Listener? = null
+    private var positionUpdateJob: Job? = null
     private var allSongs: List<Song> = emptyList()
 
     init {
-        loadSongs()
-        loadAvailableFolders()
+        if (hasReadMediaAudioPermission()) {
+            refreshLibrary()
+        }
     }
 
     fun loadSongs() {
         viewModelScope.launch {
-            val loaded = repository.loadSongs()
+            val loaded = runCatching { repository.loadSongs() }.getOrDefault(emptyList())
             allSongs = loaded
             _songs.value = loaded
+            syncCurrentSongFromController()
         }
     }
 
     private fun loadAvailableFolders() {
         viewModelScope.launch {
-            _availableFolders.value = repository.getAvailableFolders()
+            _availableFolders.value = runCatching { repository.getAvailableFolders() }
+                .getOrDefault(emptyList())
         }
     }
 
@@ -101,26 +109,59 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun setMediaController(controller: MediaController?) {
+        if (mediaController === controller) return
+
+        mediaController?.let { currentController ->
+            playerListener?.let(currentController::removeListener)
+        }
+        positionUpdateJob?.cancel()
+
         mediaController = controller
-        controller?.addListener(object : Player.Listener {
-            override fun onIsPlayingChanged(playing: Boolean) {
-                _isPlaying.value = playing
-            }
+        if (controller == null) {
+            _isPlaying.value = false
+            _currentPosition.value = 0L
+            return
+        }
 
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val id = mediaItem?.mediaId?.toLongOrNull()
-                _currentSong.value = allSongs.find { it.id == id }
-            }
+        if (playerListener == null) {
+            playerListener = object : Player.Listener {
+                override fun onIsPlayingChanged(playing: Boolean) {
+                    _isPlaying.value = playing
+                }
 
-            override fun onShuffleModeEnabledChanged(enabled: Boolean) {
-                _shuffleEnabled.value = enabled
-            }
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    val id = mediaItem?.mediaId?.toLongOrNull()
+                    _currentSong.value = allSongs.find { it.id == id }
+                }
 
-            override fun onRepeatModeChanged(mode: Int) {
-                _repeatMode.value = mode
+                override fun onShuffleModeEnabledChanged(enabled: Boolean) {
+                    _shuffleEnabled.value = enabled
+                }
+
+                override fun onRepeatModeChanged(mode: Int) {
+                    _repeatMode.value = mode
+                }
             }
-        })
+        }
+
+        playerListener?.let(controller::addListener)
+        _isPlaying.value = controller.isPlaying
+        _shuffleEnabled.value = controller.shuffleModeEnabled
+        _repeatMode.value = controller.repeatMode
+        _currentPosition.value = controller.currentPosition
+        syncCurrentSongFromController()
         startPositionUpdater()
+    }
+
+    fun onAudioPermissionChanged(granted: Boolean) {
+        if (granted) {
+            refreshLibrary()
+        } else {
+            allSongs = emptyList()
+            _songs.value = emptyList()
+            _availableFolders.value = emptyList()
+            _currentSong.value = null
+        }
     }
 
     fun playSong(song: Song, queue: List<Song> = allSongs) {
@@ -197,11 +238,36 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun startPositionUpdater() {
-        viewModelScope.launch {
+        positionUpdateJob?.cancel()
+        positionUpdateJob = viewModelScope.launch {
             while (isActive) {
                 _currentPosition.value = mediaController?.currentPosition ?: 0L
                 delay(500)
             }
         }
     }
+
+    override fun onCleared() {
+        mediaController?.let { controller ->
+            playerListener?.let(controller::removeListener)
+        }
+        positionUpdateJob?.cancel()
+        super.onCleared()
+    }
+
+    private fun refreshLibrary() {
+        loadSongs()
+        loadAvailableFolders()
+    }
+
+    private fun syncCurrentSongFromController() {
+        val id = mediaController?.currentMediaItem?.mediaId?.toLongOrNull()
+        _currentSong.value = allSongs.find { it.id == id }
+    }
+
+    private fun hasReadMediaAudioPermission(): Boolean =
+        ContextCompat.checkSelfPermission(
+            getApplication(),
+            Manifest.permission.READ_MEDIA_AUDIO
+        ) == PackageManager.PERMISSION_GRANTED
 }

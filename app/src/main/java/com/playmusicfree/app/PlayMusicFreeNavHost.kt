@@ -45,7 +45,10 @@ private enum class Tab(val route: String, val label: String, val icon: ImageVect
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PlayMusicFreeNavHost(mediaController: MediaController?) {
+fun PlayMusicFreeNavHost(
+    mediaController: MediaController?,
+    hasAudioPermission: Boolean
+) {
     val viewModel: PlayerViewModel = viewModel()
     val navController = rememberNavController()
 
@@ -67,6 +70,9 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
 
     LaunchedEffect(mediaController) {
         viewModel.setMediaController(mediaController)
+    }
+    LaunchedEffect(hasAudioPermission) {
+        viewModel.onAudioPermissionChanged(hasAudioPermission)
     }
 
     Scaffold(

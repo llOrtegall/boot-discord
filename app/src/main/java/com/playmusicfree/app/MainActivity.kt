@@ -21,20 +21,32 @@ import com.playmusicfree.app.ui.theme.PlayMusicFreeTheme
 class MainActivity : ComponentActivity() {
 
     private var mediaController by mutableStateOf<MediaController?>(null)
+    private var hasAudioPermission by mutableStateOf(false)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
-    ) { _ -> }
+    ) { _ ->
+        hasAudioPermission = hasPermission(Manifest.permission.READ_MEDIA_AUDIO)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        hasAudioPermission = hasPermission(Manifest.permission.READ_MEDIA_AUDIO)
         requestPermissions()
         setContent {
             PlayMusicFreeTheme {
-                PlayMusicFreeNavHost(mediaController = mediaController)
+                PlayMusicFreeNavHost(
+                    mediaController = mediaController,
+                    hasAudioPermission = hasAudioPermission
+                )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        hasAudioPermission = hasPermission(Manifest.permission.READ_MEDIA_AUDIO)
     }
 
     override fun onStart() {
@@ -55,18 +67,17 @@ class MainActivity : ComponentActivity() {
 
     private fun requestPermissions() {
         val permissions = mutableListOf<String>()
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.READ_MEDIA_AUDIO)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (!hasPermission(Manifest.permission.READ_MEDIA_AUDIO)) {
             permissions.add(Manifest.permission.READ_MEDIA_AUDIO)
         }
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
+        if (!hasPermission(Manifest.permission.POST_NOTIFICATIONS)) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS)
         }
         if (permissions.isNotEmpty()) {
             permissionLauncher.launch(permissions.toTypedArray())
         }
     }
+
+    private fun hasPermission(permission: String): Boolean =
+        ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 }
