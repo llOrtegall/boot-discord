@@ -180,6 +180,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch { repository.addSongToPlaylist(playlistId, songId) }
     }
 
+    fun createPlaylistAndAddSong(name: String, songId: Long) {
+        viewModelScope.launch {
+            val playlistId = repository.createPlaylist(name)
+            repository.addSongToPlaylist(playlistId, songId)
+        }
+    }
+
     fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
         viewModelScope.launch { repository.removeSongFromPlaylist(playlistId, songId) }
     }

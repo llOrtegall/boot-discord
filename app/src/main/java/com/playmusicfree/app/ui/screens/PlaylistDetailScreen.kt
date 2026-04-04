@@ -1,5 +1,6 @@
 package com.playmusicfree.app.ui.screens
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -16,6 +17,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.playmusicfree.app.data.model.Song
@@ -29,6 +31,7 @@ fun PlaylistDetailScreen(
     currentSong: Song?,
     onSongClick: (Song) -> Unit,
     onBack: () -> Unit,
+    onRemoveSong: ((Song) -> Unit)? = null,
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     Scaffold(
@@ -46,18 +49,34 @@ fun PlaylistDetailScreen(
             )
         }
     ) { scaffoldPadding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(scaffoldPadding),
-            contentPadding = contentPadding
-        ) {
-            items(songs, key = { it.id }) { song ->
-                SongItem(
-                    song = song,
-                    isPlaying = currentSong?.id == song.id,
-                    onClick = { onSongClick(song) }
+        if (songs.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(scaffoldPadding),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = "No songs in this playlist",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f)
                 )
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(scaffoldPadding),
+                contentPadding = contentPadding
+            ) {
+                items(songs, key = { it.id }) { song ->
+                    SongItem(
+                        song = song,
+                        isPlaying = currentSong?.id == song.id,
+                        onClick = { onSongClick(song) },
+                        onMoreClick = onRemoveSong?.let { remove -> { remove(song) } }
+                    )
+                }
             }
         }
     }

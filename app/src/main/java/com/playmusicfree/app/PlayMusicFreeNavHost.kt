@@ -133,7 +133,14 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
                 HomeScreen(
                     songs = songs,
                     currentSong = currentSong,
-                    onSongClick = { viewModel.playSong(it) }
+                    playlists = playlists,
+                    onSongClick = { viewModel.playSong(it) },
+                    onAddSongToPlaylist = { songId, playlistId ->
+                        viewModel.addSongToPlaylist(playlistId, songId)
+                    },
+                    onCreatePlaylistAndAdd = { name, songId ->
+                        viewModel.createPlaylistAndAddSong(name, songId)
+                    }
                 )
             }
 
@@ -158,7 +165,10 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
                         songs = playlistSongs,
                         currentSong = currentSong,
                         onSongClick = { song -> viewModel.playSong(song, playlistSongs) },
-                        onBack = { navController.popBackStack() }
+                        onBack = { navController.popBackStack() },
+                        onRemoveSong = { song ->
+                            viewModel.removeSongFromPlaylist(playlist.id, song.id)
+                        }
                     )
                 }
             }
