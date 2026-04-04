@@ -1,5 +1,6 @@
 package com.playmusicfree.app
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -26,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.session.MediaController
@@ -55,6 +57,7 @@ fun PlayMusicFreeNavHost(
 ) {
     val viewModel: PlayerViewModel = viewModel()
     val navController = rememberNavController()
+    val context = LocalContext.current
 
     val songs by viewModel.songs.collectAsState()
     val playlists by viewModel.playlists.collectAsState()
@@ -63,6 +66,9 @@ fun PlayMusicFreeNavHost(
     val currentPosition by viewModel.currentPosition.collectAsState()
     val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
+    val isMetadataLookupRunning by viewModel.isMetadataLookupRunning.collectAsState()
+    val hasPendingMetadataSuggestion by viewModel.hasPendingMetadataForCurrentSong.collectAsState()
+    val hasAppliedMetadataOverride by viewModel.hasAppliedMetadataForCurrentSong.collectAsState()
     val availableFolders by viewModel.availableFolders.collectAsState()
     val excludedFolders by viewModel.excludedFolders.collectAsState()
     val minDurationSeconds by viewModel.minDurationSeconds.collectAsState()
@@ -77,6 +83,11 @@ fun PlayMusicFreeNavHost(
     }
     LaunchedEffect(hasAudioPermission) {
         viewModel.onAudioPermissionChanged(hasAudioPermission)
+    }
+    LaunchedEffect(context) {
+        viewModel.metadataLookupEvents.collect { message ->
+            Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+        }
     }
 
     Scaffold(
@@ -196,7 +207,14 @@ fun PlayMusicFreeNavHost(
                     currentPosition = currentPosition,
                     shuffleEnabled = shuffleEnabled,
                     repeatMode = repeatMode,
+                    isMetadataLookupRunning = isMetadataLookupRunning,
+                    hasPendingMetadataSuggestion = hasPendingMetadataSuggestion,
+                    hasAppliedMetadataOverride = hasAppliedMetadataOverride,
                     onBack = { navController.popBackStack() },
+                    onLookupMetadata = viewModel::lookupMetadataForCurrentSong,
+                    onApplyMetadataSuggestion = viewModel::applyPendingMetadataForCurrentSong,
+                    onDiscardMetadataSuggestion = viewModel::discardPendingMetadataForCurrentSong,
+                    onRevertMetadata = viewModel::revertMetadataForCurrentSong,
                     onTogglePlayPause = viewModel::togglePlayPause,
                     onSkipNext = viewModel::skipNext,
                     onSkipPrevious = viewModel::skipPrevious,
