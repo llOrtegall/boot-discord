@@ -1,14 +1,15 @@
 package com.playmusicfree.app
 
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -20,12 +21,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.session.MediaController
 import androidx.navigation.NavGraph.Companion.findStartDestination
@@ -39,6 +36,7 @@ import com.playmusicfree.app.ui.screens.HomeScreen
 import com.playmusicfree.app.ui.screens.PlayerScreen
 import com.playmusicfree.app.ui.screens.PlaylistDetailScreen
 import com.playmusicfree.app.ui.screens.PlaylistScreen
+import com.playmusicfree.app.ui.screens.SettingsScreen
 
 private enum class Tab(val route: String, val label: String, val icon: ImageVector) {
     Songs("songs", "Songs", Icons.Default.MusicNote),
@@ -58,6 +56,9 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
     val currentPosition by viewModel.currentPosition.collectAsState()
     val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
+    val availableFolders by viewModel.availableFolders.collectAsState()
+    val excludedFolders by viewModel.excludedFolders.collectAsState()
+    val minDurationSeconds by viewModel.minDurationSeconds.collectAsState()
 
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = navBackStackEntry?.destination?.route
@@ -73,6 +74,11 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
             if (isMainScreen) {
                 TopAppBar(
                     title = { Text("Play Music Free") },
+                    actions = {
+                        IconButton(onClick = { navController.navigate("settings") }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings")
+                        }
+                    },
                     colors = TopAppBarDefaults.topAppBarColors(
                         containerColor = MaterialTheme.colorScheme.background
                     )
@@ -94,9 +100,7 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
                             onClick = { navController.navigate("player") }
                         )
                     }
-                    NavigationBar(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant
-                    ) {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
                         Tab.entries.forEach { tab ->
                             NavigationBarItem(
                                 selected = currentRoute == tab.route,
@@ -173,6 +177,17 @@ fun PlayMusicFreeNavHost(mediaController: MediaController?) {
                     onSeek = viewModel::seekTo,
                     onToggleShuffle = viewModel::toggleShuffle,
                     onToggleRepeat = viewModel::toggleRepeat
+                )
+            }
+
+            composable("settings") {
+                SettingsScreen(
+                    availableFolders = availableFolders,
+                    excludedFolders = excludedFolders,
+                    minDurationSeconds = minDurationSeconds,
+                    onToggleFolder = viewModel::toggleFolderExclusion,
+                    onSetMinDuration = viewModel::setMinDuration,
+                    onBack = { navController.popBackStack() }
                 )
             }
         }

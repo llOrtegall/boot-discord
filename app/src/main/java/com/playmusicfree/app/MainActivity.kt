@@ -8,6 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -17,7 +20,7 @@ import com.playmusicfree.app.ui.theme.PlayMusicFreeTheme
 
 class MainActivity : ComponentActivity() {
 
-    private var mediaController: MediaController? = null
+    private var mediaController by mutableStateOf<MediaController?>(null)
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
