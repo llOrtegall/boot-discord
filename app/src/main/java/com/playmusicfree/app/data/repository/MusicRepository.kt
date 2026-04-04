@@ -4,6 +4,7 @@ import android.content.Context
 import com.playmusicfree.app.data.local.MediaScanner
 import com.playmusicfree.app.data.local.PlaylistDao
 import com.playmusicfree.app.data.local.ScanPreferences
+import com.playmusicfree.app.data.local.ScanPreferences.StoredSongMetadata
 import com.playmusicfree.app.data.model.Playlist
 import com.playmusicfree.app.data.model.Song
 import kotlinx.coroutines.Dispatchers
@@ -29,6 +30,15 @@ class MusicRepository(
 
     fun setCustomSongTitle(songId: Long, title: String) =
         scanPreferences.setCustomSongTitle(songId, title)
+
+    fun getCustomSongMetadata(): Map<Long, StoredSongMetadata> =
+        scanPreferences.getCustomSongMetadata()
+
+    fun setCustomSongMetadata(songId: Long, metadata: StoredSongMetadata) =
+        scanPreferences.setCustomSongMetadata(songId, metadata)
+
+    fun removeCustomSongMetadata(songId: Long) =
+        scanPreferences.removeCustomSongMetadata(songId)
 
     suspend fun getAvailableFolders(): List<String> = withContext(Dispatchers.IO) {
         MediaScanner.getAvailableFolders(context)

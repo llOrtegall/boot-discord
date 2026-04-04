@@ -66,9 +66,9 @@ fun PlayMusicFreeNavHost(
     val currentPosition by viewModel.currentPosition.collectAsState()
     val shuffleEnabled by viewModel.shuffleEnabled.collectAsState()
     val repeatMode by viewModel.repeatMode.collectAsState()
-    val isMetadataLookupRunning by viewModel.isMetadataLookupRunning.collectAsState()
-    val hasPendingMetadataSuggestion by viewModel.hasPendingMetadataForCurrentSong.collectAsState()
-    val hasAppliedMetadataOverride by viewModel.hasAppliedMetadataForCurrentSong.collectAsState()
+    val metadataLookupSongId by viewModel.metadataLookupSongId.collectAsState()
+    val pendingMetadataSuggestion by viewModel.pendingMetadataSuggestion.collectAsState()
+    val metadataOverriddenSongIds by viewModel.metadataOverriddenSongIds.collectAsState()
     val availableFolders by viewModel.availableFolders.collectAsState()
     val excludedFolders by viewModel.excludedFolders.collectAsState()
     val minDurationSeconds by viewModel.minDurationSeconds.collectAsState()
@@ -168,7 +168,14 @@ fun PlayMusicFreeNavHost(
                     onCreatePlaylistAndAdd = { name, songId ->
                         viewModel.createPlaylistAndAddSong(name, songId)
                     },
-                    onRenameSong = viewModel::renameSongTitle
+                    onRenameSong = viewModel::renameSongTitle,
+                    metadataLookupSongId = metadataLookupSongId,
+                    pendingMetadataSuggestion = pendingMetadataSuggestion,
+                    metadataOverriddenSongIds = metadataOverriddenSongIds,
+                    onLookupSongMetadata = viewModel::lookupMetadataForSong,
+                    onApplySongMetadata = viewModel::applyPendingMetadataForSong,
+                    onDiscardSongMetadata = viewModel::discardPendingMetadataForSong,
+                    onRevertSongMetadata = viewModel::revertMetadataForSong
                 )
             }
 
@@ -208,14 +215,7 @@ fun PlayMusicFreeNavHost(
                     currentPosition = currentPosition,
                     shuffleEnabled = shuffleEnabled,
                     repeatMode = repeatMode,
-                    isMetadataLookupRunning = isMetadataLookupRunning,
-                    hasPendingMetadataSuggestion = hasPendingMetadataSuggestion,
-                    hasAppliedMetadataOverride = hasAppliedMetadataOverride,
                     onBack = { navController.popBackStack() },
-                    onLookupMetadata = viewModel::lookupMetadataForCurrentSong,
-                    onApplyMetadataSuggestion = viewModel::applyPendingMetadataForCurrentSong,
-                    onDiscardMetadataSuggestion = viewModel::discardPendingMetadataForCurrentSong,
-                    onRevertMetadata = viewModel::revertMetadataForCurrentSong,
                     onTogglePlayPause = viewModel::togglePlayPause,
                     onSkipNext = viewModel::skipNext,
                     onSkipPrevious = viewModel::skipPrevious,

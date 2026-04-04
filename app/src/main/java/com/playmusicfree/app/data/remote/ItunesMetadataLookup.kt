@@ -3,6 +3,7 @@ package com.playmusicfree.app.data.remote
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.text.Normalizer
 import java.util.LinkedHashMap
 import java.util.LinkedHashSet
 import org.json.JSONArray
@@ -17,58 +18,87 @@ object ItunesMetadataLookup {
         val artworkUrl: String?
     )
 
-    private val editionKeywords = setOf("deluxe", "edition", "remaster", "remastered", "live")
+    private data class Candidate(
+        val source: Source,
+        val data: MetadataResult
+    )
+
+    private data class ScoredCandidate(
+        val candidate: Candidate,
+        val score: Float,
+        val titleScore: Float,
+        val artistScore: Float
+    )
+
+    private data class ParsedSongHint(
+        val title: String,
+        val artist: String
+    )
+
+    private enum class Source(val weight: Float) {
+        ITUNES(0.08f),
+        DEEZER(0.08f),
+        AUDIODB(0.06f),
+        MUSICBRAINZ(0.04f)
+    }
+
+    private val noisyKeywords = setOf(
+        "remix", "mixed", "live", "karaoke", "tribute", "sped up", "nightcore"
+    )
     private val riskyAlbumKeywords = setOf(
-        "soundtrack",
-        "motion picture",
-        "karaoke",
-        "tribute",
-        "kids",
-        "disney"
+        "soundtrack", "motion picture", "disney", "kids", "tribute", "karaoke"
     )
 
     fun searchSong(title: String, artist: String): MetadataResult? {
-        val cleanTitle = title.cleanTerm()
-        val cleanArtist = artist.cleanTerm()
-        val queries = buildQueries(cleanTitle, cleanArtist)
-        if (queries.isEmpty()) return null
+        val cleanTitle = title.cleanInput()
+        val cleanArtist = artist.cleanInput()
+        val parsed = parseSongHint(cleanTitle, cleanArtist)
 
-        val allCandidates = mutableListOf<MetadataResult>()
+        val searchTitle = parsed.title
+        val searchArtist = parsed.artist
+        if (searchTitle.isBlank() && searchArtist.isBlank()) return null
+
+        val queries = buildQueries(searchTitle, searchArtist)
+        val candidates = mutableListOf<Candidate>()
+
         for (query in queries) {
-            allCandidates += searchItunes(query)
-            allCandidates += searchDeezer(query)
-            allCandidates += searchMusicBrainz(cleanTitle, cleanArtist, query)
+            candidates += searchItunes(query)
+            candidates += searchDeezer(query)
+            candidates += searchMusicBrainz(searchTitle, searchArtist, query)
         }
+        candidates += searchAudioDb(searchTitle, searchArtist)
 
-        return selectBestCandidate(cleanTitle, cleanArtist, allCandidates)
+        return selectBestCandidate(searchTitle, searchArtist, candidates)
     }
 
-    private fun searchItunes(query: String): List<MetadataResult> {
+    private fun searchItunes(query: String): List<Candidate> {
         val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
-        val url = "https://itunes.apple.com/search?term=$encoded&entity=song&limit=8"
-        val payload = httpGet(url) ?: return emptyList()
+        val payload = httpGet("https://itunes.apple.com/search?term=$encoded&entity=song&limit=10")
+            ?: return emptyList()
 
         val root = JSONObject(payload)
         val results = root.optJSONArray("results") ?: return emptyList()
-        return results.toMetadataResults { item ->
+        return results.toCandidates(Source.ITUNES) { item ->
             val rawArtwork = item.optString("artworkUrl100").normalize()
-            val artwork = rawArtwork?.replace("100x100bb", "600x600bb")
             MetadataResult(
                 title = item.optString("trackName").normalize(),
                 artist = item.optString("artistName").normalize(),
                 album = item.optString("collectionName").normalize(),
-                artworkUrl = artwork
+                artworkUrl = rawArtwork
+                    ?.replace("100x100bb", "600x600bb")
+                    ?.replace("http://", "https://")
             )
         }
     }
 
-    private fun searchDeezer(query: String): List<MetadataResult> {
+    private fun searchDeezer(query: String): List<Candidate> {
         val encoded = URLEncoder.encode(query, Charsets.UTF_8.name())
-        val payload = httpGet("https://api.deezer.com/search?q=$encoded&limit=8") ?: return emptyList()
+        val payload = httpGet("https://api.deezer.com/search?q=$encoded&limit=10")
+            ?: return emptyList()
 
         val root = JSONObject(payload)
         val data = root.optJSONArray("data") ?: return emptyList()
-        return data.toMetadataResults { item ->
+        return data.toCandidates(Source.DEEZER) { item ->
             val albumObj = item.optJSONObject("album")
             val artwork = albumObj?.optString("cover_xl").normalize()
                 ?: albumObj?.optString("cover_big").normalize()
@@ -81,20 +111,44 @@ object ItunesMetadataLookup {
         }
     }
 
-    private fun searchMusicBrainz(
-        cleanTitle: String,
-        cleanArtist: String,
-        query: String
-    ): List<MetadataResult> {
-        if (cleanTitle.isBlank() && cleanArtist.isBlank()) return emptyList()
+    private fun searchAudioDb(title: String, artist: String): List<Candidate> {
+        if (title.isBlank() || artist.isBlank()) return emptyList()
 
-        val mbQuery = if (cleanTitle.isNotBlank() && cleanArtist.isNotBlank()) {
-            "recording:\"$cleanTitle\" AND artist:\"$cleanArtist\""
-        } else {
-            "recording:\"$query\""
+        val encodedTitle = URLEncoder.encode(title, Charsets.UTF_8.name())
+        val encodedArtist = URLEncoder.encode(artist, Charsets.UTF_8.name())
+        val payload = httpGet(
+            "https://www.theaudiodb.com/api/v1/json/2/searchtrack.php?s=$encodedArtist&t=$encodedTitle"
+        ) ?: return emptyList()
+
+        val root = JSONObject(payload)
+        val tracks = root.optJSONArray("track") ?: return emptyList()
+        return tracks.toCandidates(Source.AUDIODB) { item ->
+            val artwork = item.optString("strTrackThumb").normalize()
+                ?.replace("http://", "https://")
+            MetadataResult(
+                title = item.optString("strTrack").normalize(),
+                artist = item.optString("strArtist").normalize(),
+                album = item.optString("strAlbum").normalize(),
+                artworkUrl = artwork
+            )
+        }
+    }
+
+    private fun searchMusicBrainz(
+        sourceTitle: String,
+        sourceArtist: String,
+        query: String
+    ): List<Candidate> {
+        if (sourceTitle.isBlank() && sourceArtist.isBlank()) return emptyList()
+
+        val mbQuery = when {
+            sourceTitle.isNotBlank() && sourceArtist.isNotBlank() ->
+                "recording:\"$sourceTitle\" AND artist:\"$sourceArtist\""
+            else -> "recording:\"$query\""
         }
         val encoded = URLEncoder.encode(mbQuery, Charsets.UTF_8.name())
-        val url = "https://musicbrainz.org/ws/2/recording/?query=$encoded&fmt=json&limit=5&inc=releases+artist-credits"
+        val url =
+            "https://musicbrainz.org/ws/2/recording/?query=$encoded&fmt=json&limit=8&inc=releases+artist-credits"
         val payload = httpGet(
             url = url,
             userAgent = "PlayMusicFree/1.0 (metadata lookup)"
@@ -102,24 +156,22 @@ object ItunesMetadataLookup {
 
         val root = JSONObject(payload)
         val recordings = root.optJSONArray("recordings") ?: return emptyList()
-        return recordings.toMetadataResults { recording ->
+        return recordings.toCandidates(Source.MUSICBRAINZ) { recording ->
             val artistCredit = recording.optJSONArray("artist-credit")
             val artistName = artistCredit
                 ?.optJSONObject(0)
                 ?.optString("name")
                 .normalize()
 
-            val releases = recording.optJSONArray("releases")
-            val release = releases?.optJSONObject(0)
-            val releaseTitle = release?.optString("title").normalize()
+            val release = recording.optJSONArray("releases")?.optJSONObject(0)
+            val album = release?.optString("title").normalize()
             val releaseId = release?.optString("id").normalize()
-            val coverUrl = releaseId?.let { "https://coverartarchive.org/release/$it/front-500" }
-
             MetadataResult(
                 title = recording.optString("title").normalize(),
                 artist = artistName,
-                album = releaseTitle,
-                artworkUrl = coverUrl
+                album = album,
+                artworkUrl = releaseId
+                    ?.let { "https://coverartarchive.org/release/$it/front-500" }
             )
         }
     }
@@ -127,69 +179,114 @@ object ItunesMetadataLookup {
     private fun selectBestCandidate(
         sourceTitle: String,
         sourceArtist: String,
-        candidates: List<MetadataResult>
+        candidates: List<Candidate>
     ): MetadataResult? {
         if (candidates.isEmpty()) return null
 
-        val sourceBase = "$sourceTitle $sourceArtist".lowercase()
-        val deduped = LinkedHashMap<String, MetadataResult>()
+        val sourceTitleNorm = sourceTitle.normalizeForMatch()
+        val sourceArtistNorm = sourceArtist.normalizeForMatch()
+        val sourceBase = "$sourceTitleNorm $sourceArtistNorm"
+
+        val deduped = LinkedHashMap<String, Candidate>()
         candidates.forEach { candidate ->
-            val key = listOf(candidate.title, candidate.artist, candidate.album, candidate.artworkUrl)
-                .joinToString("|") { it.orEmpty().lowercase() }
+            val key = listOf(
+                candidate.data.title,
+                candidate.data.artist,
+                candidate.data.album,
+                candidate.data.artworkUrl
+            ).joinToString("|") { it.orEmpty().normalizeForMatch() }
             deduped.putIfAbsent(key, candidate)
         }
 
         val scored = deduped.values
             .map { candidate ->
-                val titleScore = similarity(sourceTitle, candidate.title.orEmpty().cleanTerm())
-                val artistScore = if (sourceArtist.isBlank()) 0.5f else similarity(
-                    sourceArtist,
-                    candidate.artist.orEmpty().cleanTerm()
-                )
-                val metadataBonus = if (!candidate.artworkUrl.isNullOrBlank()) 0.06f else 0f
-                val editionPenalty = candidate.editionPenalty(sourceBase)
+                val titleScore = similarity(sourceTitleNorm, candidate.data.title.orEmpty().normalizeForMatch())
+                val artistScore = if (sourceArtistNorm.isBlank()) {
+                    0.45f
+                } else {
+                    similarity(sourceArtistNorm, candidate.data.artist.orEmpty().normalizeForMatch())
+                }
+                val exactTitleBonus = if (titleScore >= 0.95f) 0.18f else 0f
+                val exactArtistBonus = if (artistScore >= 0.95f) 0.10f else 0f
+                val artworkBonus = if (!candidate.data.artworkUrl.isNullOrBlank()) 0.09f else 0f
+                val sourceBonus = candidate.source.weight
+                val titlePenalty = candidate.titlePenalty(sourceBase)
                 val albumPenalty = candidate.albumPenalty(sourceBase)
-                val score = (titleScore * 0.72f) + (artistScore * 0.28f) + metadataBonus - editionPenalty - albumPenalty
+                val score = (titleScore * 0.65f) +
+                    (artistScore * 0.25f) +
+                    exactTitleBonus +
+                    exactArtistBonus +
+                    artworkBonus +
+                    sourceBonus -
+                    titlePenalty -
+                    albumPenalty
+
                 ScoredCandidate(
                     candidate = candidate,
                     score = score,
-                    titleScore = titleScore
+                    titleScore = titleScore,
+                    artistScore = artistScore
                 )
             }
             .sortedByDescending { it.score }
 
         val best = scored.firstOrNull() ?: return null
-        val requiredScore = if (sourceArtist.isBlank()) 0.64f else 0.50f
-        val requiredTitleScore = if (sourceTitle.isBlank()) 0f else 0.48f
+        val minTitle = if (sourceTitleNorm.isBlank()) 0f else 0.33f
+        val minArtist = if (sourceArtistNorm.isBlank()) 0f else 0.18f
 
-        return if (best.score >= requiredScore && best.titleScore >= requiredTitleScore) {
-            best.candidate
-        } else {
-            null
+        if (best.titleScore >= minTitle && best.artistScore >= minArtist && best.score >= 0.41f) {
+            return best.candidate.data
         }
+
+        // Soft fallback: prefer candidates with artwork and decent title match.
+        val soft = scored.firstOrNull {
+            !it.candidate.data.artworkUrl.isNullOrBlank() && it.titleScore >= 0.30f
+        }
+        return soft?.candidate?.data
     }
 
-    private fun MetadataResult.editionPenalty(sourceBase: String): Float {
-        val combined = listOf(title, album).joinToString(" ").lowercase()
-        val hasUnexpectedEditionWord = editionKeywords.any { keyword ->
-            keyword in combined && keyword !in sourceBase
+    private fun Candidate.titlePenalty(sourceBase: String): Float {
+        val titleNorm = data.title.orEmpty().normalizeForMatch()
+        val hasUnexpectedNoisyKeyword = noisyKeywords.any { key ->
+            key in titleNorm && key !in sourceBase
         }
-        return if (hasUnexpectedEditionWord) 0.22f else 0f
+        return if (hasUnexpectedNoisyKeyword) 0.28f else 0f
     }
 
-    private fun MetadataResult.albumPenalty(sourceBase: String): Float {
-        val albumLower = album.orEmpty().lowercase()
-        if (albumLower.isBlank()) return 0f
+    private fun Candidate.albumPenalty(sourceBase: String): Float {
+        val albumNorm = data.album.orEmpty().normalizeForMatch()
+        if (albumNorm.isBlank()) return 0f
 
-        val hasRiskyKeyword = riskyAlbumKeywords.any { keyword ->
-            keyword in albumLower && keyword !in sourceBase
+        val hasRiskyKeyword = riskyAlbumKeywords.any { key ->
+            key in albumNorm && key !in sourceBase
         }
         return if (hasRiskyKeyword) 0.16f else 0f
     }
 
-    private fun similarity(a: String, b: String): Float {
-        val left = a.normalizeForMatch()
-        val right = b.normalizeForMatch()
+    private fun parseSongHint(title: String, artist: String): ParsedSongHint {
+        var cleanTitle = title
+            .replace(Regex("^\\d+\\s*[-._)]\\s*"), "")
+            .replace(Regex("^track\\s*\\d+\\s*[-._)]\\s*", RegexOption.IGNORE_CASE), "")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+        var cleanArtist = artist
+
+        // Common filename pattern: "Artist - Title"
+        if (cleanArtist.isBlank() && cleanTitle.contains(" - ")) {
+            val parts = cleanTitle.split(" - ", limit = 2)
+            if (parts.size == 2 && parts[0].isNotBlank() && parts[1].isNotBlank()) {
+                cleanArtist = parts[0].trim()
+                cleanTitle = parts[1].trim()
+            }
+        }
+
+        return ParsedSongHint(
+            title = cleanTitle.cleanInput(),
+            artist = cleanArtist.cleanInput()
+        )
+    }
+
+    private fun similarity(left: String, right: String): Float {
         if (left.isBlank() || right.isBlank()) return 0f
         if (left == right) return 1f
 
@@ -208,8 +305,8 @@ object ItunesMetadataLookup {
     ): String? {
         val connection = (URL(url).openConnection() as HttpURLConnection).apply {
             requestMethod = "GET"
-            connectTimeout = 7000
-            readTimeout = 7000
+            connectTimeout = 8000
+            readTimeout = 8000
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", userAgent)
         }
@@ -232,14 +329,17 @@ object ItunesMetadataLookup {
         return queries.toList()
     }
 
-    private fun JSONArray.toMetadataResults(
+    private fun JSONArray.toCandidates(
+        source: Source,
         mapper: (JSONObject) -> MetadataResult
-    ): List<MetadataResult> {
-        val list = mutableListOf<MetadataResult>()
+    ): List<Candidate> {
+        val list = mutableListOf<Candidate>()
         for (index in 0 until length()) {
             val item = optJSONObject(index) ?: continue
             val mapped = mapper(item)
-            if (mapped.hasUsefulMetadata()) list += mapped
+            if (mapped.hasUsefulMetadata()) {
+                list += Candidate(source = source, data = mapped)
+            }
         }
         return list
     }
@@ -251,11 +351,11 @@ object ItunesMetadataLookup {
             !artworkUrl.isNullOrBlank()
     }
 
-    private fun String.cleanTerm(): String {
+    private fun String.cleanInput(): String {
         val value = normalize().orEmpty()
         if (value.isBlank()) return ""
         return when (value.lowercase()) {
-            "unknown", "unknown artist", "unknown album" -> ""
+            "unknown", "unknown artist", "unknown album", "<unknown>" -> ""
             else -> value
         }
     }
@@ -263,18 +363,17 @@ object ItunesMetadataLookup {
     private fun String?.normalize(): String? = this?.trim()?.ifBlank { null }
 
     private fun String.normalizeForMatch(): String {
-        return lowercase()
+        if (isBlank()) return ""
+        val ascii = Normalizer.normalize(this, Normalizer.Form.NFD)
+            .replace(Regex("\\p{M}+"), "")
+
+        return ascii.lowercase()
             .replace(Regex("\\([^)]*\\)"), " ")
             .replace(Regex("\\[[^]]*]"), " ")
+            .replace(Regex("\\b(ft|feat|featuring)\\b.*"), " ")
             .replace("&", " ")
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
     }
-
-    private data class ScoredCandidate(
-        val candidate: MetadataResult,
-        val score: Float,
-        val titleScore: Float
-    )
 }

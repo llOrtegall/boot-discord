@@ -12,8 +12,10 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import com.playmusicfree.app.PlayMusicFreeApp
+import com.playmusicfree.app.data.local.ScanPreferences.StoredSongMetadata
 import com.playmusicfree.app.data.model.Playlist
 import com.playmusicfree.app.data.model.Song
+import com.playmusicfree.app.data.model.SongMetadataSuggestion
 import com.playmusicfree.app.data.remote.ItunesMetadataLookup
 import com.playmusicfree.app.data.repository.MusicRepository
 import kotlinx.coroutines.Job
@@ -70,16 +72,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _repeatMode = MutableStateFlow(Player.REPEAT_MODE_OFF)
     val repeatMode: StateFlow<Int> = _repeatMode.asStateFlow()
 
-    private val _isMetadataLookupRunning = MutableStateFlow(false)
-    val isMetadataLookupRunning: StateFlow<Boolean> = _isMetadataLookupRunning.asStateFlow()
+    private val _metadataLookupSongId = MutableStateFlow<Long?>(null)
+    val metadataLookupSongId: StateFlow<Long?> = _metadataLookupSongId.asStateFlow()
 
-    private val _hasPendingMetadataForCurrentSong = MutableStateFlow(false)
-    val hasPendingMetadataForCurrentSong: StateFlow<Boolean> =
-        _hasPendingMetadataForCurrentSong.asStateFlow()
+    private val _pendingMetadataSuggestion = MutableStateFlow<SongMetadataSuggestion?>(null)
+    val pendingMetadataSuggestion: StateFlow<SongMetadataSuggestion?> =
+        _pendingMetadataSuggestion.asStateFlow()
 
-    private val _hasAppliedMetadataForCurrentSong = MutableStateFlow(false)
-    val hasAppliedMetadataForCurrentSong: StateFlow<Boolean> =
-        _hasAppliedMetadataForCurrentSong.asStateFlow()
+    private val _metadataOverriddenSongIds = MutableStateFlow<Set<Long>>(emptySet())
+    val metadataOverriddenSongIds: StateFlow<Set<Long>> =
+        _metadataOverriddenSongIds.asStateFlow()
 
     private val _metadataLookupEvents = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val metadataLookupEvents: SharedFlow<String> = _metadataLookupEvents
@@ -114,6 +116,19 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             val loaded = runCatching { repository.loadSongs() }.getOrDefault(emptyList())
             sourceSongs = loaded
             customSongTitles = repository.getCustomSongTitles()
+            pendingMetadataOverrides.clear()
+            _pendingMetadataSuggestion.value = null
+            _metadataLookupSongId.value = null
+            appliedMetadataOverrides.clear()
+            repository.getCustomSongMetadata().forEach { (songId, stored) ->
+                appliedMetadataOverrides[songId] = SongMetadataOverride(
+                    title = stored.title,
+                    artist = stored.artist,
+                    album = stored.album,
+                    artworkUri = stored.artworkUri?.let(Uri::parse)
+                )
+            }
+            _metadataOverriddenSongIds.value = appliedMetadataOverrides.keys.toSet()
             allSongs = sourceSongs.map(::applyMetadataOverride)
             _songs.value = allSongs
             syncCurrentSongFromController()
@@ -165,7 +180,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                     val id = mediaItem?.mediaId?.toLongOrNull()
                     _currentSong.value = allSongs.find { it.id == id }
-                    updateCurrentMetadataActionState()
                 }
 
                 override fun onShuffleModeEnabledChanged(enabled: Boolean) {
@@ -199,7 +213,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             _currentSong.value = null
             pendingMetadataOverrides.clear()
             appliedMetadataOverrides.clear()
-            updateCurrentMetadataActionState()
+            _metadataLookupSongId.value = null
+            _pendingMetadataSuggestion.value = null
+            _metadataOverriddenSongIds.value = emptySet()
         }
     }
 
@@ -282,16 +298,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun lookupMetadataForCurrentSong() {
-        if (_isMetadataLookupRunning.value) return
-        val song = _currentSong.value
-        if (song == null) {
-            _metadataLookupEvents.tryEmit("No song playing")
+    fun lookupMetadataForSong(songId: Long) {
+        if (_metadataLookupSongId.value != null) return
+        val song = allSongs.find { it.id == songId } ?: run {
+            _metadataLookupEvents.tryEmit("Song not found")
             return
         }
 
         viewModelScope.launch {
-            _isMetadataLookupRunning.value = true
+            _metadataLookupSongId.value = songId
             try {
                 val lookup = runCatching {
                     withContext(Dispatchers.IO) {
@@ -311,49 +326,68 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     artworkUri = lookup.artworkUrl?.let(Uri::parse)
                 )
                 pendingMetadataOverrides[song.id] = metadataOverride
-                updateCurrentMetadataActionState()
+                _pendingMetadataSuggestion.value = SongMetadataSuggestion(
+                    songId = song.id,
+                    originalTitle = song.title,
+                    originalArtist = song.artist,
+                    originalAlbum = song.album,
+                    suggestedTitle = metadataOverride.title ?: song.title,
+                    suggestedArtist = metadataOverride.artist ?: song.artist,
+                    suggestedAlbum = metadataOverride.album ?: song.album,
+                    suggestedArtworkUri = metadataOverride.artworkUri
+                )
                 _metadataLookupEvents.tryEmit("Suggestion ready")
             } finally {
-                _isMetadataLookupRunning.value = false
+                _metadataLookupSongId.value = null
             }
         }
     }
 
-    fun applyPendingMetadataForCurrentSong() {
-        val songId = _currentSong.value?.id ?: run {
-            _metadataLookupEvents.tryEmit("No song playing")
-            return
-        }
+    fun applyPendingMetadataForSong(songId: Long) {
         val pending = pendingMetadataOverrides.remove(songId) ?: run {
             _metadataLookupEvents.tryEmit("No suggestion")
             return
         }
         appliedMetadataOverrides[songId] = pending
+        repository.setCustomSongMetadata(
+            songId = songId,
+            metadata = StoredSongMetadata(
+                title = pending.title,
+                artist = pending.artist,
+                album = pending.album,
+                artworkUri = pending.artworkUri?.toString()
+            )
+        )
+        if (_pendingMetadataSuggestion.value?.songId == songId) {
+            _pendingMetadataSuggestion.value = null
+        }
+        _metadataOverriddenSongIds.value = appliedMetadataOverrides.keys.toSet()
         refreshSongsWithOverrides()
         _metadataLookupEvents.tryEmit("Metadata applied")
     }
 
-    fun discardPendingMetadataForCurrentSong() {
-        val songId = _currentSong.value?.id ?: run {
-            _metadataLookupEvents.tryEmit("No song playing")
-            return
-        }
+    fun discardPendingMetadataForSong(songId: Long) {
         if (pendingMetadataOverrides.remove(songId) != null) {
-            updateCurrentMetadataActionState()
+            if (_pendingMetadataSuggestion.value?.songId == songId) {
+                _pendingMetadataSuggestion.value = null
+            }
             _metadataLookupEvents.tryEmit("Suggestion discarded")
         } else {
             _metadataLookupEvents.tryEmit("No suggestion")
         }
     }
 
-    fun revertMetadataForCurrentSong() {
-        val songId = _currentSong.value?.id ?: run {
-            _metadataLookupEvents.tryEmit("No song playing")
-            return
-        }
+    fun revertMetadataForSong(songId: Long) {
         val removedApplied = appliedMetadataOverrides.remove(songId) != null
         val removedPending = pendingMetadataOverrides.remove(songId) != null
         if (removedApplied || removedPending) {
+            if (removedApplied) {
+                repository.removeCustomSongMetadata(songId)
+            }
+            if (_pendingMetadataSuggestion.value?.songId == songId) {
+                _pendingMetadataSuggestion.value = null
+            }
+            _metadataOverriddenSongIds.value = appliedMetadataOverrides.keys.toSet()
             refreshSongsWithOverrides()
             _metadataLookupEvents.tryEmit("Metadata reverted")
         } else {
@@ -392,7 +426,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun syncCurrentSongFromController() {
         val id = mediaController?.currentMediaItem?.mediaId?.toLongOrNull()
         _currentSong.value = allSongs.find { it.id == id }
-        updateCurrentMetadataActionState()
     }
 
     private fun refreshSongsWithOverrides() {
@@ -401,7 +434,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _currentSong.value = _currentSong.value?.let { current ->
             allSongs.find { it.id == current.id } ?: current
         }
-        updateCurrentMetadataActionState()
     }
 
     private fun applyMetadataOverride(song: Song): Song {
@@ -423,14 +455,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         } else {
             songWithMetadata.copy(title = customTitle)
         }
-    }
-
-    private fun updateCurrentMetadataActionState() {
-        val songId = _currentSong.value?.id
-        _hasPendingMetadataForCurrentSong.value =
-            songId != null && pendingMetadataOverrides.containsKey(songId)
-        _hasAppliedMetadataForCurrentSong.value =
-            songId != null && appliedMetadataOverrides.containsKey(songId)
     }
 
     private fun hasReadMediaAudioPermission(): Boolean =

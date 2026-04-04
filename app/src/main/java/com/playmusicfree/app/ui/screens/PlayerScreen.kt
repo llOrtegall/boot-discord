@@ -16,9 +16,6 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.AutoFixHigh
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Repeat
@@ -26,8 +23,6 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
-import androidx.compose.material.icons.filled.Undo
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -62,14 +57,7 @@ fun PlayerScreen(
     currentPosition: Long,
     shuffleEnabled: Boolean,
     repeatMode: Int,
-    isMetadataLookupRunning: Boolean,
-    hasPendingMetadataSuggestion: Boolean,
-    hasAppliedMetadataOverride: Boolean,
     onBack: () -> Unit,
-    onLookupMetadata: () -> Unit,
-    onApplyMetadataSuggestion: () -> Unit,
-    onDiscardMetadataSuggestion: () -> Unit,
-    onRevertMetadata: () -> Unit,
     onTogglePlayPause: () -> Unit,
     onSkipNext: () -> Unit,
     onSkipPrevious: () -> Unit,
@@ -84,45 +72,6 @@ fun PlayerScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-                    }
-                },
-                actions = {
-                    if (isMetadataLookupRunning) {
-                        CircularProgressIndicator(
-                            modifier = Modifier
-                                .size(24.dp)
-                                .padding(end = 8.dp),
-                            strokeWidth = 2.dp
-                        )
-                    } else if (hasPendingMetadataSuggestion) {
-                        IconButton(onClick = onDiscardMetadataSuggestion) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Discard suggestion"
-                            )
-                        }
-                        IconButton(onClick = onApplyMetadataSuggestion) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Apply suggestion",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = onLookupMetadata) {
-                            Icon(
-                                imageVector = Icons.Default.AutoFixHigh,
-                                contentDescription = "Find metadata"
-                            )
-                        }
-                        if (hasAppliedMetadataOverride) {
-                            IconButton(onClick = onRevertMetadata) {
-                                Icon(
-                                    imageVector = Icons.Default.Undo,
-                                    contentDescription = "Revert metadata"
-                                )
-                            }
-                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
