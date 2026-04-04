@@ -19,7 +19,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.playmusicfree.app.data.model.Song
 import com.playmusicfree.app.ui.components.SongItem
 
@@ -44,7 +43,7 @@ fun PlaylistDetailScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
+                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f)
                 )
             )
         }
@@ -67,7 +66,8 @@ fun PlaylistDetailScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(scaffoldPadding),
-                contentPadding = contentPadding
+                contentPadding = contentPadding,
+                verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(2.dp)
             ) {
                 items(songs, key = { it.id }) { song ->
                     SongItem(
