@@ -99,6 +99,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var positionUpdateJob: Job? = null
     private var sourceSongs: List<Song> = emptyList()
     private var allSongs: List<Song> = emptyList()
+    private var customSongTitles: Map<Long, String> = emptyMap()
     private val pendingMetadataOverrides = mutableMapOf<Long, SongMetadataOverride>()
     private val appliedMetadataOverrides = mutableMapOf<Long, SongMetadataOverride>()
 
@@ -112,6 +113,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         viewModelScope.launch {
             val loaded = runCatching { repository.loadSongs() }.getOrDefault(emptyList())
             sourceSongs = loaded
+            customSongTitles = repository.getCustomSongTitles()
             allSongs = sourceSongs.map(::applyMetadataOverride)
             _songs.value = allSongs
             syncCurrentSongFromController()
@@ -191,6 +193,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         } else {
             sourceSongs = emptyList()
             allSongs = emptyList()
+            customSongTitles = emptyMap()
             _songs.value = emptyList()
             _availableFolders.value = emptyList()
             _currentSong.value = null
@@ -266,6 +269,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun removeSongFromPlaylist(playlistId: Long, songId: Long) {
         viewModelScope.launch { repository.removeSongFromPlaylist(playlistId, songId) }
+    }
+
+    fun renameSongTitle(songId: Long, newTitle: String) {
+        val cleanTitle = newTitle.trim()
+        if (cleanTitle.isBlank()) return
+
+        viewModelScope.launch {
+            repository.setCustomSongTitle(songId, cleanTitle)
+            customSongTitles = repository.getCustomSongTitles()
+            refreshSongsWithOverrides()
+        }
     }
 
     fun lookupMetadataForCurrentSong() {
@@ -391,13 +405,24 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun applyMetadataOverride(song: Song): Song {
-        val metadataOverride = appliedMetadataOverrides[song.id] ?: return song
-        return song.copy(
-            title = metadataOverride.title ?: song.title,
-            artist = metadataOverride.artist ?: song.artist,
-            album = metadataOverride.album ?: song.album,
-            albumArtUri = metadataOverride.artworkUri ?: song.albumArtUri
-        )
+        val metadataOverride = appliedMetadataOverrides[song.id]
+        val songWithMetadata = if (metadataOverride == null) {
+            song
+        } else {
+            song.copy(
+                title = metadataOverride.title ?: song.title,
+                artist = metadataOverride.artist ?: song.artist,
+                album = metadataOverride.album ?: song.album,
+                albumArtUri = metadataOverride.artworkUri ?: song.albumArtUri
+            )
+        }
+
+        val customTitle = customSongTitles[song.id]?.trim().orEmpty()
+        return if (customTitle.isBlank()) {
+            songWithMetadata
+        } else {
+            songWithMetadata.copy(title = customTitle)
+        }
     }
 
     private fun updateCurrentMetadataActionState() {

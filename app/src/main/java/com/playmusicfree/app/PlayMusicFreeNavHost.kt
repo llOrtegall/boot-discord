@@ -167,7 +167,8 @@ fun PlayMusicFreeNavHost(
                     },
                     onCreatePlaylistAndAdd = { name, songId ->
                         viewModel.createPlaylistAndAddSong(name, songId)
-                    }
+                    },
+                    onRenameSong = viewModel::renameSongTitle
                 )
             }
 

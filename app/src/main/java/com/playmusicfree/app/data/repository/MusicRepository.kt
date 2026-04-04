@@ -24,6 +24,12 @@ class MusicRepository(
         )
     }
 
+    fun getCustomSongTitles(): Map<Long, String> =
+        scanPreferences.getCustomSongTitles()
+
+    fun setCustomSongTitle(songId: Long, title: String) =
+        scanPreferences.setCustomSongTitle(songId, title)
+
     suspend fun getAvailableFolders(): List<String> = withContext(Dispatchers.IO) {
         MediaScanner.getAvailableFolders(context)
     }

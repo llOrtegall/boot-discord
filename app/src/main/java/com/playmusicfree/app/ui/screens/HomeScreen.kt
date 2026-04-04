@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.HorizontalDivider
@@ -50,6 +51,7 @@ fun HomeScreen(
     onSongClick: (Song) -> Unit,
     onAddSongToPlaylist: (songId: Long, playlistId: Long) -> Unit,
     onCreatePlaylistAndAdd: (name: String, songId: Long) -> Unit,
+    onRenameSong: (songId: Long, newTitle: String) -> Unit,
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     var songToAdd by remember { mutableStateOf<Song?>(null) }
@@ -107,6 +109,15 @@ fun HomeScreen(
                     Toast.LENGTH_SHORT
                 ).show()
                 songToAdd = null
+            },
+            onRenameSong = { newTitle ->
+                onRenameSong(song.id, newTitle)
+                Toast.makeText(
+                    context,
+                    "Song renamed",
+                    Toast.LENGTH_SHORT
+                ).show()
+                songToAdd = null
             }
         )
     }
@@ -118,9 +129,11 @@ private fun AddToPlaylistDialog(
     playlists: List<Playlist>,
     onDismiss: () -> Unit,
     onSelectPlaylist: (Playlist) -> Unit,
-    onCreatePlaylist: (String) -> Unit
+    onCreatePlaylist: (String) -> Unit,
+    onRenameSong: (String) -> Unit
 ) {
     var showCreateDialog by remember { mutableStateOf(false) }
+    var showRenameDialog by remember { mutableStateOf(false) }
 
     if (showCreateDialog) {
         NewPlaylistDialog(
@@ -130,10 +143,19 @@ private fun AddToPlaylistDialog(
                 showCreateDialog = false
             }
         )
+    } else if (showRenameDialog) {
+        RenameSongDialog(
+            initialName = songTitle,
+            onDismiss = { showRenameDialog = false },
+            onRename = { newName ->
+                onRenameSong(newName)
+                showRenameDialog = false
+            }
+        )
     } else {
         AlertDialog(
             onDismissRequest = onDismiss,
-            title = { Text("Add to playlist") },
+            title = { Text("Song options") },
             text = {
                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                     Text(
@@ -142,6 +164,34 @@ private fun AddToPlaylistDialog(
                         color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.65f),
                         modifier = Modifier.padding(bottom = 12.dp)
                     )
+
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { showRenameDialog = true }
+                            .padding(vertical = 2.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = "Rename song",
+                                color = MaterialTheme.colorScheme.primary,
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
                     Surface(
                         modifier = Modifier
@@ -242,6 +292,42 @@ private fun NewPlaylistDialog(
         },
         dismissButton = {
             TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
+}
+
+@Composable
+private fun RenameSongDialog(
+    initialName: String,
+    onDismiss: () -> Unit,
+    onRename: (String) -> Unit
+) {
+    var name by remember(initialName) { mutableStateOf(initialName) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename song") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("New name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { if (name.isNotBlank()) onRename(name.trim()) },
+                enabled = name.isNotBlank()
+            ) {
+                Text("Save")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
         }
     )
 }
