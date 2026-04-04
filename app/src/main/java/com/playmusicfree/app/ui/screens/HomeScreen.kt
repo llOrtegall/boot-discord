@@ -1,5 +1,6 @@
 package com.playmusicfree.app.ui.screens
 
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,6 +33,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -51,6 +53,7 @@ fun HomeScreen(
     contentPadding: PaddingValues = PaddingValues(0.dp)
 ) {
     var songToAdd by remember { mutableStateOf<Song?>(null) }
+    val context = LocalContext.current
 
     if (songs.isEmpty()) {
         Box(
@@ -89,10 +92,20 @@ fun HomeScreen(
             onDismiss = { songToAdd = null },
             onSelectPlaylist = { playlist ->
                 onAddSongToPlaylist(song.id, playlist.id)
+                Toast.makeText(
+                    context,
+                    "Song added",
+                    Toast.LENGTH_SHORT
+                ).show()
                 songToAdd = null
             },
             onCreatePlaylist = { name ->
                 onCreatePlaylistAndAdd(name, song.id)
+                Toast.makeText(
+                    context,
+                    "Song added",
+                    Toast.LENGTH_SHORT
+                ).show()
                 songToAdd = null
             }
         )

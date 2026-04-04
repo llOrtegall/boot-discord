@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -30,6 +32,9 @@ fun SongItem(
     isPlaying: Boolean,
     onClick: () -> Unit,
     onMoreClick: (() -> Unit)? = null,
+    actionIcon: ImageVector = Icons.Default.MoreVert,
+    actionContentDescription: String = "More options",
+    actionTint: Color? = null,
     modifier: Modifier = Modifier
 ) {
     val containerColor = if (isPlaying) {
@@ -99,9 +104,9 @@ fun SongItem(
             if (onMoreClick != null) {
                 IconButton(onClick = onMoreClick) {
                     Icon(
-                        imageVector = Icons.Default.MoreVert,
-                        contentDescription = "More options",
-                        tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
+                        imageVector = actionIcon,
+                        contentDescription = actionContentDescription,
+                        tint = actionTint ?: MaterialTheme.colorScheme.onSurface.copy(alpha = 0.55f)
                     )
                 }
             }
