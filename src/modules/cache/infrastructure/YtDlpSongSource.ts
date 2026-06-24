@@ -1,6 +1,9 @@
 import { mkdirSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import type { SongSource, ResolvedSong } from '../domain/SongSource.ts';
+import { logger } from '../../../shared/logger.ts';
+
+const SCOPE = 'ytdlp';
 
 export class YtDlpSongSource implements SongSource {
   private readonly audioDir: string;
@@ -25,8 +28,12 @@ export class YtDlpSongSource implements SongSource {
 
     const json = JSON.parse(stdout);
     const entry = Array.isArray(json.entries) ? json.entries[0] : json;
-    if (!entry || !entry.id) return null;
+    if (!entry || !entry.id) {
+      logger.warn(SCOPE, `no result for query "${query}"`);
+      return null;
+    }
 
+    logger.info(SCOPE, `resolved "${query}" -> ${entry.id} (${entry.title ?? 'Unknown'})`);
     return {
       videoId: String(entry.id),
       title: entry.title ? String(entry.title) : 'Unknown',
@@ -38,6 +45,8 @@ export class YtDlpSongSource implements SongSource {
 
   async download(videoId: string, sourceUrl: string): Promise<string> {
     const outTemplate = join(this.audioDir, `${videoId}.%(ext)s`);
+    logger.info(SCOPE, `downloading ${videoId}`);
+    const startedAt = Date.now();
     await this.run([
       this.binary,
       sourceUrl,
@@ -52,6 +61,7 @@ export class YtDlpSongSource implements SongSource {
 
     const file = readdirSync(this.audioDir).find((f) => f.startsWith(`${videoId}.`));
     if (!file) throw new Error(`[YtDlpSongSource] downloaded file not found for ${videoId}`);
+    logger.info(SCOPE, `downloaded ${videoId} in ${Date.now() - startedAt}ms -> ${file}`);
     return join(this.audioDir, file);
   }
 
@@ -65,6 +75,7 @@ export class YtDlpSongSource implements SongSource {
     const exitCode = await proc.exited;
     if (exitCode !== 0) {
       const stderr = await new Response(proc.stderr).text();
+      logger.error(SCOPE, `${this.binary} exited ${exitCode}`, stderr.trim());
       throw new Error(`[YtDlpSongSource] ${this.binary} exited ${exitCode}: ${stderr.trim()}`);
     }
     return stdout;
