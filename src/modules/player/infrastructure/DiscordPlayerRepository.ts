@@ -17,6 +17,9 @@ import type { VoiceBasedChannel } from 'discord.js';
 import type { PlayerRepository } from '../domain/PlayerRepository.ts';
 import { Player } from '../domain/Player.ts';
 import { Song } from '../../queue/domain/Song.ts';
+import { logger } from '../../../shared/logger.ts';
+
+const SCOPE = 'voice';
 
 export class DiscordPlayerRepository implements PlayerRepository {
   private readonly players = new Map<string, Player>();
@@ -32,9 +35,15 @@ export class DiscordPlayerRepository implements PlayerRepository {
     if (existing) return existing;
 
     const player = createAudioPlayer({ behaviors: { noSubscriber: NoSubscriberBehavior.Pause } });
+    player.on('stateChange', (oldState, newState) => {
+      logger.info(SCOPE, `player ${oldState.status} -> ${newState.status} (guild ${guildId})`);
+    });
+    player.on('error', (err) => {
+      logger.error(SCOPE, `audio player error (guild ${guildId})`, err);
+    });
     player.on(AudioPlayerStatus.Idle, () => {
       this.onIdleCallback?.(guildId).catch((err) =>
-        console.error(`[DiscordPlayerRepository] onIdle error for guild ${guildId}:`, err),
+        logger.error(SCOPE, `onIdle callback failed (guild ${guildId})`, err),
       );
     });
     this.audioPlayers.set(guildId, player);
@@ -56,19 +65,26 @@ export class DiscordPlayerRepository implements PlayerRepository {
   async playSong(guildId: string, song: Song): Promise<void> {
     const player = this.getOrCreateAudioPlayer(guildId);
     const filePath = song.getUrl().getValue();
+    logger.info(SCOPE, `play "${song.getTitle()}" from ${filePath} (guild ${guildId})`);
+
     const { stream, type } = await demuxProbe(createReadStream(filePath));
+    logger.info(SCOPE, `stream type=${type} (guild ${guildId})`);
     const resource = createAudioResource(stream, { inputType: type });
 
     const connection = this.getConnection(guildId);
-    if (connection) {
-      try {
-        await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
-      } catch (err) {
-        console.error(`[DiscordPlayerRepository] connection not ready for guild ${guildId}:`, err);
-      }
-      connection.subscribe(player);
+    if (!connection) {
+      logger.error(SCOPE, `no voice connection for guild ${guildId}; cannot play`);
+      return;
     }
 
+    try {
+      await entersState(connection, VoiceConnectionStatus.Ready, 15_000);
+    } catch (err) {
+      logger.error(SCOPE, `connection not ready within 15s (guild ${guildId})`, err);
+      return;
+    }
+
+    connection.subscribe(player);
     player.play(resource);
   }
 
@@ -92,14 +108,25 @@ export class DiscordPlayerRepository implements PlayerRepository {
   }
 
   joinChannel(channel: VoiceBasedChannel): VoiceConnection {
-    const existing = this.getConnection(channel.guild.id);
+    const guildId = channel.guild.id;
+    const existing = this.getConnection(guildId);
     if (existing) return existing;
 
-    return joinVoiceChannel({
+    logger.info(SCOPE, `joining channel ${channel.id} (guild ${guildId})`);
+    const connection = joinVoiceChannel({
       channelId: channel.id,
-      guildId: channel.guild.id,
+      guildId,
       adapterCreator: channel.guild.voiceAdapterCreator as unknown as DiscordGatewayAdapterCreator,
     });
+
+    connection.on('stateChange', (oldState, newState) => {
+      logger.info(SCOPE, `connection ${oldState.status} -> ${newState.status} (guild ${guildId})`);
+    });
+    connection.on('error', (err) => {
+      logger.error(SCOPE, `connection error (guild ${guildId})`, err);
+    });
+
+    return connection;
   }
 
   getAudioPlayer(guildId: string): AudioPlayer | undefined {
