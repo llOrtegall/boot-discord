@@ -3,42 +3,34 @@ import { PlayerState } from '../domain/PlayerState.ts';
 import type { PlayerRepository } from '../domain/PlayerRepository.ts';
 import type { QueueRepository } from '../../queue/domain/QueueRepository.ts';
 
-interface PlayNextProps {
+interface PlayPreviousProps {
   guildId: string;
   channelId: string;
   playerRepository: PlayerRepository;
   queueRepository: QueueRepository;
 }
 
-export async function playNext({
+export async function playPrevious({
   guildId,
   channelId,
   playerRepository,
   queueRepository,
-}: PlayNextProps): Promise<Player | null> {
-  const { song, queue: _queue } = await queueRepository.shift(guildId);
-
-  if (!song) {
-    const existing = await playerRepository.getByGuildId(guildId);
-    if (existing) {
-      const stopped = existing.stop();
-      await playerRepository.save(stopped);
-      await playerRepository.stop(guildId);
-    }
-    return null;
-  }
+}: PlayPreviousProps): Promise<Player | null> {
+  const previous = await queueRepository.popHistory(guildId);
+  if (!previous) return null;
 
   let player = await playerRepository.getByGuildId(guildId);
+
+  const current = player?.getCurrentSong() ?? null;
+  if (current) await queueRepository.unshift(guildId, current);
+
   if (!player) {
     player = Player.create(guildId, channelId, PlayerState.create('idle'), null);
   }
 
-  const previous = player.getCurrentSong();
-  if (previous) await queueRepository.pushHistory(guildId, previous);
-
-  const playing = player.play(song);
+  const playing = player.play(previous);
   await playerRepository.save(playing);
-  await playerRepository.playSong(guildId, song);
+  await playerRepository.playSong(guildId, previous);
 
   return playing;
 }

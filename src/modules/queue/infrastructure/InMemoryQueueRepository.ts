@@ -4,6 +4,7 @@ import { SongQueue } from '../domain/SongQueue.ts';
 
 export class InMemoryQueueRepository implements QueueRepository {
   private readonly store = new Map<string, SongQueue>();
+  private readonly history = new Map<string, Song[]>();
 
   async getByGuildId(guildId: string): Promise<SongQueue> {
     return this.store.get(guildId) ?? SongQueue.create([]);
@@ -16,6 +17,13 @@ export class InMemoryQueueRepository implements QueueRepository {
   async addSong(guildId: string, song: Song): Promise<SongQueue> {
     const current = await this.getByGuildId(guildId);
     const updated = current.add(song);
+    this.store.set(guildId, updated);
+    return updated;
+  }
+
+  async unshift(guildId: string, song: Song): Promise<SongQueue> {
+    const current = await this.getByGuildId(guildId);
+    const updated = current.prepend(song);
     this.store.set(guildId, updated);
     return updated;
   }
@@ -36,5 +44,17 @@ export class InMemoryQueueRepository implements QueueRepository {
 
   async clear(guildId: string): Promise<void> {
     this.store.set(guildId, SongQueue.create([]));
+    this.history.delete(guildId);
+  }
+
+  async pushHistory(guildId: string, song: Song): Promise<void> {
+    const stack = this.history.get(guildId) ?? [];
+    stack.push(song);
+    this.history.set(guildId, stack);
+  }
+
+  async popHistory(guildId: string): Promise<Song | null> {
+    const stack = this.history.get(guildId);
+    return stack?.pop() ?? null;
   }
 }

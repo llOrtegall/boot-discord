@@ -33,6 +33,10 @@ export class SongQueue {
     return SongQueue.create([...this.songs, song]);
   }
 
+  prepend(song: Song): SongQueue {
+    return SongQueue.create([song, ...this.songs]);
+  }
+
   shift(): { song: Song | null; queue: SongQueue } {
     if (this.songs.length === 0) return { song: null, queue: this };
     const [first, ...rest] = this.songs;
