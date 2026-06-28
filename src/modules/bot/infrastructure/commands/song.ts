@@ -2,6 +2,11 @@ import { ChatInputCommandInteraction, GuildMember, SlashCommandBuilder } from 'd
 import { CacheFactory } from '../../../cache/application/factory.ts';
 import { QueueFactory } from '../../../queue/application/factory.ts';
 import { PlayerFactory, playerRepository } from '../../../player/application/factory.ts';
+import {
+  buildControls,
+  buildNowPlayingEmbed,
+  buildQueuedEmbed,
+} from '../components/playerControls.ts';
 
 export const data = new SlashCommandBuilder()
   .setName('song')
@@ -46,14 +51,21 @@ export async function execute(interaction: ChatInputCommandInteraction): Promise
     cached.getDurationSec(),
     member.user.id,
   );
-  const isFirst = queue.count() === 1;
 
-  if (isFirst) {
-    await PlayerFactory.playNext(guildId, voiceChannel.id);
-    await interaction.editReply(`Now playing: **${cached.getTitle()}**`);
+  const player = await playerRepository.getByGuildId(guildId);
+  const isActive = !!player && (player.getState().isPlaying() || player.getState().isPaused());
+
+  const requestedById = member.user.id;
+
+  if (isActive) {
+    await interaction.editReply({
+      embeds: [buildQueuedEmbed(cached.getTitle(), queue.count(), requestedById)],
+    });
   } else {
-    await interaction.editReply(
-      `Added to queue: **${cached.getTitle()}** (position ${queue.count()})`,
-    );
+    await PlayerFactory.playNext(guildId, voiceChannel.id);
+    await interaction.editReply({
+      embeds: [buildNowPlayingEmbed(cached.getTitle(), cached.getDurationSec(), requestedById)],
+      components: [buildControls()],
+    });
   }
 }
