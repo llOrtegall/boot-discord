@@ -1,0 +1,11 @@
+services:
+  bot:
+    image: ghcr.io/llortegall/boot-discord:latest
+    container_name: music-bot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - cache:/app/.cache
+
+volumes:
+  cache:
