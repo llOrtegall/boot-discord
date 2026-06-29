@@ -74,7 +74,9 @@ export class YtDlpSongSource implements SongSource {
       this.binary,
       sourceUrl,
       '-f',
-      'bestaudio[ext=webm]/bestaudio',
+      // Prefer opus/webm (plays without transcode); fall back to any audio-only,
+      // then to a combined format when YouTube serves no audio-only stream.
+      'bestaudio[ext=webm]/bestaudio/best',
       '-o',
       outTemplate,
       '--no-playlist',
