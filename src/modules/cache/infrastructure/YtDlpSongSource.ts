@@ -5,36 +5,14 @@ import { logger } from '../../../shared/logger.ts';
 
 const SCOPE = 'ytdlp';
 
-interface YtDlpOptions {
-  binary?: string;
-  /** Path to a Netscape-format cookies.txt — needed when YouTube demands login (e.g. datacenter/VPS IPs). */
-  cookiesFile?: string;
-  /** Raw value for `--extractor-args`, e.g. `youtube:player_client=tv`. */
-  extractorArgs?: string;
-}
-
 export class YtDlpSongSource implements SongSource {
   private readonly audioDir: string;
   private readonly binary: string;
-  private readonly cookiesFile?: string;
-  private readonly extractorArgs?: string;
 
-  constructor(audioDir: string, options: YtDlpOptions = {}) {
+  constructor(audioDir: string, binary = 'yt-dlp') {
     this.audioDir = audioDir;
-    this.binary = options.binary ?? 'yt-dlp';
-    this.cookiesFile = options.cookiesFile?.trim() || undefined;
-    this.extractorArgs = options.extractorArgs?.trim() || undefined;
+    this.binary = binary;
     mkdirSync(audioDir, { recursive: true });
-    if (this.cookiesFile) logger.info(SCOPE, `using cookies file ${this.cookiesFile}`);
-    if (this.extractorArgs) logger.info(SCOPE, `using extractor-args ${this.extractorArgs}`);
-  }
-
-  /** Auth/anti-bot flags appended to every yt-dlp invocation. */
-  private authArgs(): string[] {
-    const args: string[] = [];
-    if (this.cookiesFile) args.push('--cookies', this.cookiesFile);
-    if (this.extractorArgs) args.push('--extractor-args', this.extractorArgs);
-    return args;
   }
 
   async resolve(query: string): Promise<ResolvedSong | null> {
@@ -46,7 +24,6 @@ export class YtDlpSongSource implements SongSource {
       '--no-playlist',
       '--no-warnings',
       '--skip-download',
-      ...this.authArgs(),
     ]);
 
     const json = JSON.parse(stdout);
@@ -74,15 +51,12 @@ export class YtDlpSongSource implements SongSource {
       this.binary,
       sourceUrl,
       '-f',
-      // Prefer opus/webm (plays without transcode); fall back to any audio-only,
-      // then to a combined format when YouTube serves no audio-only stream.
-      'bestaudio[ext=webm]/bestaudio/best',
+      'bestaudio[ext=webm]/bestaudio',
       '-o',
       outTemplate,
       '--no-playlist',
       '--no-warnings',
       '--no-part',
-      ...this.authArgs(),
     ]);
 
     const file = readdirSync(this.audioDir).find((f) => f.startsWith(`${videoId}.`));
