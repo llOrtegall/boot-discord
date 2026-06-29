@@ -63,11 +63,16 @@ Prereqs on the VPS: Docker + Docker Compose plugin installed.
 
 YouTube blocks many datacenter/VPS IPs and demands login. Two knobs (set in `.env`):
 
-- `YT_DLP_EXTRACTOR_ARGS=youtube:player_client=tv` — no account; try first, often not enough.
-- `YT_DLP_COOKIES=/app/cookies.txt` — reliable. Export `cookies.txt` (Netscape format)
-  from a **throwaway** logged-in YouTube account (the bundled account can be rate-limited),
-  put it next to `docker-compose.yml`, and uncomment the `cookies.txt` bind mount in
-  `docker-compose.yml`. Cookies expire — refresh the file when 403s return.
+- `YT_DLP_COOKIES=/app/cookies.txt` — **reliable, use this.** Export `cookies.txt`
+  (Netscape format — must start with `# Netscape HTTP Cookie File`, not JSON) from a
+  **throwaway** logged-in YouTube account (the account can get rate-limited), put it next
+  to `docker-compose.yml`, and uncomment the `cookies.txt:ro` bind mount. The entrypoint
+  copies it to a writable path on the cache volume because yt-dlp rewrites the jar on exit
+  — so the bind mount stays read-only and you don't touch file permissions. Cookies
+  expire — replace the file and `docker compose restart` when 403s return.
+- `YT_DLP_EXTRACTOR_ARGS=youtube:player_client=tv` — last resort, no account. Frequently
+  causes `Requested format is not available` and does not accept cookies; leave it unset
+  whenever `YT_DLP_COOKIES` works.
 
 Both apply to every `yt-dlp` call (resolve + download). After editing `.env`/the mount,
 `docker compose up -d` to recreate the container.
