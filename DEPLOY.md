@@ -59,6 +59,19 @@ Prereqs on the VPS: Docker + Docker Compose plugin installed.
    docker compose pull && docker compose up -d
    ```
 
+## YouTube "Sign in to confirm you're not a bot"
+
+YouTube blocks many datacenter/VPS IPs and demands login. Two knobs (set in `.env`):
+
+- `YT_DLP_EXTRACTOR_ARGS=youtube:player_client=tv` — no account; try first, often not enough.
+- `YT_DLP_COOKIES=/app/cookies.txt` — reliable. Export `cookies.txt` (Netscape format)
+  from a **throwaway** logged-in YouTube account (the bundled account can be rate-limited),
+  put it next to `docker-compose.yml`, and uncomment the `cookies.txt` bind mount in
+  `docker-compose.yml`. Cookies expire — refresh the file when 403s return.
+
+Both apply to every `yt-dlp` call (resolve + download). After editing `.env`/the mount,
+`docker compose up -d` to recreate the container.
+
 ## Persistence
 
 Downloaded audio + the sqlite cache live in `/app/.cache`, mounted on the named

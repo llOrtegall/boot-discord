@@ -6,6 +6,8 @@ services:
     env_file: .env
     volumes:
       - cache:/app/.cache
+      # Uncomment to feed YouTube cookies (set YT_DLP_COOKIES=/app/cookies.txt in .env):
+      # - ./cookies.txt:/app/cookies.txt:ro
 
 volumes:
   cache:
